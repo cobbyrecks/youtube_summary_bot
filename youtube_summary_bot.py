@@ -55,15 +55,17 @@ async def generate_summary(text, summary_length):
         "short": (
             "Provide a concise summary of the following transcript. Include only the most critical information in a "
             "few sentences."
+            "Ensure the summary does not exceed 300 characters."
         ),
         "medium": (
             "Provide a moderately detailed summary of the following transcript. Cover the main points and include "
             "essential context in a few paragraphs."
+            "Ensure the summary does not exceed 1200 characters."
         ),
         "long": (
             "Provide a detailed summary of the following transcript. Include all key points, detailed explanations, "
-            "and context, but ensure the summary does not exceed 4000 characters. Focus on offering a comprehensive "
-            "understanding while keeping it concise."
+            "and context to give a comprehensive understanding of the content."
+            "Ensure the summary does not exceed 3600 characters."
         )
     }
 
