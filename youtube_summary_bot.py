@@ -33,7 +33,7 @@ def is_valid_youtube_url(url):
         if "v" in parse_qs(parsed_url.query) or parsed_url.netloc == "youtu.be":
             return True
         return False
-    except Exception:
+    except ValueError:
         return False
 
 
@@ -42,10 +42,31 @@ def get_youtube_transcript(video_url):
     try:
         video_id = video_url.split("v=")[1].split("&")[0]
         transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        text = " ".join([item["text"] for item in transcript])
-        return text
+        return transcript
     except (TranscriptsDisabled, NoTranscriptAvailable):
         return None
+
+
+def format_transcript_with_timestamps(transcript):
+    """Format transcript into timestamped segments."""
+    formatted_transcript = []
+    for item in transcript:
+        start_time = int(item["start"])
+        end_time = start_time + int(item["duration"])
+        start_formatted = f"{start_time // 60:02}:{start_time % 60:02}"
+        end_formatted = f"{end_time // 60:02}:{end_time % 60:02}"
+        formatted_transcript.append(f"{start_formatted} - {end_formatted} : \"{item['text']}\"")
+    return "\n".join(formatted_transcript)
+
+
+async def send_long_message(ctx, content):
+    """Sends long messages in chunks of 2000 characters; limitation in discord!"""
+    max_length = 2000
+    if len(content) <= max_length:
+        await ctx.send(content)
+    else:
+        for i in range(0, len(content), max_length):
+            await ctx.send(content[i:i + max_length])
 
 
 async def generate_summary(text, summary_length):
@@ -53,19 +74,22 @@ async def generate_summary(text, summary_length):
     client = OpenAI(api_key=OPENAI_API_KEY)
     prompt_templates = {
         "short": (
-            "Provide a concise summary of the following transcript. Include only the most critical information in a "
-            "few sentences."
-            "Ensure the summary does not exceed 200 characters."
+            "Provide a concise summary of the following transcript. Focus on the most critical points, "
+            "omitting unnecessary details. Format the output as follows:\n\n"
+            "[START TIME] - [END TIME]: <<brief summary of the key point(s) here>>\n"
+            "[START TIME] - [END TIME]: <<brief summary of the key point(s) here>>\n"
         ),
         "medium": (
-            "Provide a moderately detailed summary of the following transcript. Cover the main points and include "
-            "essential context in a few paragraphs."
-            "Ensure the summary does not exceed 800 characters."
+            "Provide a moderately detailed summary of the following transcript. Cover the main points, key insights, "
+            "and provide essential context. Format the output as follows:\n\n"
+            "[START TIME] - [END TIME]: <<summary with important context here>>\n"
+            "[START TIME] - [END TIME]: <<summary with important context here>>\n"
         ),
         "long": (
-            "Provide a detailed summary of the following transcript. Include all key points, detailed explanations, "
-            "and context to give a comprehensive understanding of the content."
-            "Ensure the summary does not exceed 1800 characters."
+            "Provide a detailed and comprehensive summary of the following transcript. Include all key points, "
+            "contextual explanations, and relevant details. Format the output as follows:\n\n"
+            "[START TIME] - [END TIME]: <<detailed summary with context and explanation here>>\n"
+            "[START TIME] - [END TIME]: <<detailed summary with context and explanation here>>\n"
         )
     }
 
@@ -94,7 +118,11 @@ async def on_ready():
 
 
 @bot.command(name="summarize", help="Summarizes a YouTube video transcript. Usage: !summarize <YouTube URL>")
-async def summarize(ctx, summary_type: str, video_url: str):
+async def summarize(ctx, summary_type: str = None, video_url: str = None):
+    if not summary_type or not video_url:
+        await ctx.send("Missing arguments! Usage: `!summarize <summary_length> <YouTube URL>`")
+        return
+
     if summary_type.lower() not in ["short", "medium", "long"]:
         await ctx.send("Invalid summary type. Please choose 'short', 'medium', or 'long'.")
         return
@@ -104,14 +132,14 @@ async def summarize(ctx, summary_type: str, video_url: str):
         return
 
     await ctx.send("Fetching the transcript...")
-
     transcript = get_youtube_transcript(video_url)
+
     if transcript:
-        await ctx.send("Transcript fetched successfully. Generating summaries...")
-
-        summary = await generate_summary(transcript, summary_type.lower())
-
-        await ctx.send(f"**{summary_type.capitalize()} Summary:**\n" + summary)
+        await ctx.send("Transcript fetched successfully. Generating summary...")
+        formatted_timestamps = format_transcript_with_timestamps(transcript)
+        summary = await generate_summary(formatted_timestamps, summary_type.lower())
+        summary_message = f"**{summary_type.capitalize()} Summary:**\n{summary}"
+        await send_long_message(ctx, summary_message)
     else:
         await ctx.send("Failed to fetch the transcript. It might be disabled or unavailable for this video.")
 
